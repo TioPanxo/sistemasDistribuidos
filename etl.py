@@ -4,22 +4,17 @@
 
 import numpy   as np
 import utility_etl  as ut
-
-# Load parameters from config.csv
-def config():
-    config_params = []
-    with open("config.csv","r") as file:
-        for line in file:
-            if line != "\n":
-                config_params.append(float(line.strip()))
-    return config_params
+import os
+import pandas as pd
 
 
 # Beginning ...
 def main():
-    config()
+    ut.routing()
+    ut.config()
     ut.import_data("KDDTrain")
-   
+    ut.genNewClass()
+    ut.genDataClass()
       
 if __name__ == '__main__':   
 	main()
