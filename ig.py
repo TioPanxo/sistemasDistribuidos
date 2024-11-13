@@ -110,9 +110,7 @@ def load_data():
     return data
 
 # Beginning ...
-def main():    
-    ut.routing() ##Eliminar antes de enviar
-
+def main():
     #cargar parametros de configuracion
     config_params = ut.config()
 
