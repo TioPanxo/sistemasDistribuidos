@@ -97,9 +97,9 @@ def genDataClass():
     df = pd.read_csv(csv_path_file, sep=",", header=None)
 
     # Cargar los índices de las muestras
-    idx_class1 = pd.read_csv('idx_class1.csv', header=None).values.squeeze()
-    idx_class2 = pd.read_csv('idx_class2.csv', header=None).values.squeeze()
-    idx_class3 = pd.read_csv('idx_class3.csv', header=None).values.squeeze()
+    idx_class1 = pd.read_csv('idx_class1.csv', header=None).values.squeeze() + 1
+    idx_class2 = pd.read_csv('idx_class2.csv', header=None).values.squeeze() + 1
+    idx_class3 = pd.read_csv('idx_class3.csv', header=None).values.squeeze() + 1
 
     # Filtrar el DataFrame utilizando `.iloc` con la lista de índices
     idx_class1_df = df.iloc[idx_class1]
@@ -114,3 +114,8 @@ def genDataClass():
     data_class_df.to_csv('DataClass.csv', index=False, header=False, mode='w')
 
     return None
+
+
+
+
+    
