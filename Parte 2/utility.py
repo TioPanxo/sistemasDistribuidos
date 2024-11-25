@@ -59,7 +59,27 @@ def prepare_data():
 
 
 
+<<<<<<< Updated upstream
 
+=======
+# Archivos requeridos
+train_file = 'dtrain.csv'  # Archivo original de entrenamiento
+test_file = "dtest.csv"    # Archivo original de prueba
+idx_igain_file = 'idx_igain.csv'  # Archivo de índices de ganancia de información
+train_output = "DataTrain.csv"    # Salida de datos de entrenamiento
+test_output = "DataTest.csv"      # Salida de datos de prueba
+
+
+prepare_data(train_file, test_file, idx_igain_file, train_output, test_output)
+
+def config(csv_file):
+    config_params = []
+    with open(csv_file,"r") as file:
+        for line in file:
+            if line != "\n":
+                config_params.append(float(line.strip()))
+    return config_params
+>>>>>>> Stashed changes
 
 
 
