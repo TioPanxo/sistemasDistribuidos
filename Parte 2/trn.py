@@ -1,5 +1,4 @@
 # Extreme Deep Learning
-from json import tool
 import numpy      as np
 import pandas as pd
 import utility    as ut
@@ -156,7 +155,7 @@ def train_softmax(H, Y, max_iter, batch_size, learning_rate, beta1=0.9, beta2=0.
 # --- Main Script ---
 if __name__ == "__main__":
     # Preparar datos
-    # ut.prepare_data()  # Crea DataTrain.csv y DataTest.csv si no existen
+    ut.prepare_data()  # Crea DataTrain.csv y DataTest.csv si no existen
     # Cargar datos
     data = pd.read_csv("DataTrain.csv", header=None)
     X = data.iloc[:, :-2].values
@@ -175,9 +174,7 @@ if __name__ == "__main__":
     # Guardar los pesos del SAE
     pd.DataFrame(sae_weights["W1"]).to_csv("w1.csv", index=False, header=False)
     pd.DataFrame(sae_weights["W2"]).to_csv("w2.csv", index=False, header=False)
-    # Nota: Si necesitas guardar sesgos, incluye líneas para B1 y B2 si no son ceros
-    # pd.DataFrame(sae_weights["B1"]).to_csv("b1.csv", index=False, header=False)
-    # pd.DataFrame(sae_weights["B2"]).to_csv("b2.csv", index=False, header=False)
+
 
     # Usar H1 como entrada para el clasificador
     max_iter = int(config_softmax[0])
