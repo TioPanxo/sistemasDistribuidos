@@ -5,162 +5,179 @@ import pandas as pd
 import utility    as ut
 
 # --- Función para inicializar pesos ---
-def initialize_weights(input_size, output_size):
-    r = np.sqrt(6 / (input_size + output_size))
-    return np.random.rand(output_size, input_size) * 2 * r - r
 
-# --- Función para normalizar datos ---
-def normalize(X):
-    X_min = np.min(X, axis=0)
-    X_max = np.max(X, axis=0)
-    diff = X_max - X_min
-    diff[diff == 0] = 1  # Evitar divisiones por cero
-    return (X - X_min) / diff
 
-# --- Función para calcular el MSE ---
-def mse(y_true, y_pred):
-    return np.mean((y_true - y_pred) ** 2)
+
 
 # --- Función para pseudo-inversa ---
-def pseudo_inverse(H, Y, penalty=1e-3):
+def pseudo_inverse(H, Y, penalty):
     H_pinv = np.linalg.pinv(H.T @ H + penalty * np.eye(H.shape[1])) @ H.T
     return H_pinv @ Y
 
+def initialize_weights(L,d):
+    r = np.sqrt(6 / (L + d))
+    return np.random.rand(L, d) * 2 * r - r
+
 # --- Función para entrenar un ELM ---
-def train_elm(X, hidden_nodes):
-    input_nodes = X.shape[1]
-    W1 = initialize_weights(input_nodes, hidden_nodes)  # Pesos de la capa oculta
-    B1 = np.zeros((1, hidden_nodes))            # Sesgo de la capa oculta
-    
-    
-    # Forward pass (Encoder)
-    H = np.tanh(np.dot(X, W1.T) + B1)  # Activaciones de la capa oculta
+def train_elm(X, L, runs, penalty):
 
-    # Ajustar el Decoder (Pseudo-inversa)
-    W2 = pseudo_inverse(H, X)  # Reconstrucción H -> X
+    d = X.shape[1]
+    best_mse = float('inf')
+    best_W1, best_B1, best_W2 = None, None, None  # Variables para almacenar los mejores pesos
+    for run in range(runs):
+        # Inicialización de pesos
+        W1 = initialize_weights(L, d)
+        B1 = np.zeros((L, 1))
 
+        # Forward pass (Encoder)
+        H = np.tanh(np.dot(W1,X.T) + B1)  # Activaciones de la capa oculta
 
-    # Reconstrucción
-    X_reconstructed = np.dot(H, W2)
-    loss = mse(X, X_reconstructed)
+        #print(H)
+        # Ajustar el Decoder (Pseudo-inversa)
+        W2 = pseudo_inverse(H.T, Y, penalty)  # Reconstrucción H -> X
+        
+        # Reconstrucción
 
-    print(f"Reconstrucción ELM completada. MSE: {loss:.6f}")
-    return W1, B1, W2
+        Y_pred = np.dot(H.T, W2)
+        mse = ut.mse(Y, Y_pred)
+
+        print(f"Run {run + 1}/{runs} completado. MSE: {mse:.6f}")
+
+        # Guardar los pesos si este run produce un mejor MSE
+        if mse < best_mse:
+            best_mse = mse
+            best_W1, best_B1, best_W2 = W1, B1, W2
+
+    print(f"Mejor MSE obtenido: {best_mse:.6f}")
+    return best_W1, best_B1, best_W2
 
 # --- Función para entrenar el SAE usando pesos Decoder-ELM ---
 def train_sae_decoder_elm(X, config_sae):
-    """
-    Entrena un SAE usando pesos de Decoder-ELM.
-    """
+ 
+    # Parámetros de configuración
     hidden_layer_1 = int(config_sae[0])  # Nodos de la primera capa
-    hidden_layer_2 = int(config_sae[1])  # Nodos de la segunda capa
+    hidden_layer_2 = int(config_sae[1]) 
+    penalty = int(config_sae[2]) # Nodos de la segunda capa
+    runs = int(config_sae[3])           # Número de runs
 
     # Entrenamiento del primer ELM
     print("Entrenando ELM 1...")
-    W1, B1, W2_decoder = train_elm(X, hidden_layer_1)  # ELM para la primera capa
+    W1, B1, W1_decoder = train_elm(X, hidden_layer_1, runs, penalty)  # ELM para la primera capa
 
-    # Nueva entrada para el siguiente ELM
-    H1 = np.tanh(np.dot(X, W1.T) + B1)  # Salida codificada de la primera capa
+    # Nueva entrada para el siguiente ELM (Salida codificada de la primera capa)
+    H1 = np.tanh(np.dot(X, W1.T) + B1.T)  # Salida codificada de la primera capa
+
 
     # Entrenamiento del segundo ELM
     print("Entrenando ELM 2...")
-    W2, B2, W3_decoder = train_elm(H1, hidden_layer_2)  # ELM para la segunda capa
-
+    W2, B2, W2_decoder = train_elm(H1, hidden_layer_2, runs, penalty)  # ELM para la segunda capa
+    H2 = np.tanh(np.dot(H1, W2.T) + B2.T)
     # Construcción del SAE final
     print("Construyendo el SAE final...")
     sae_weights = {
         "W1": W1, "B1": B1,  # Primera capa del SAE
-        "W2": W2, "B2": B2   # Segunda capa del SAE
+        "W2": W2, "B2": B2,  # Segunda capa del SAE
+        "W1_decoder": W1_decoder,  # Decoder de la primera capa
+        "W2_decoder": W2_decoder   # Decoder de la segunda capa
     }
-    
 
-    return sae_weights, H1
+    # Retornar pesos del SAE y salida codificada final
+    return sae_weights, H1, H2
 
 # --- Función para entrenamiento del clasificador Softmax ---
-def train_softmax(H, Y, max_iter, batch_size, lr, beta1=0.9, beta2=0.999, epsilon=1e-8):
+def train_softmax(H, Y, max_iter, batch_size, learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8):
     """
-    Entrena un clasificador Softmax usando MiniBatch-mAdam.
+    Entrena un clasificador Softmax utilizando mAdam con mini-batches.
     """
-    input_size = H.shape[1]
-    output_size = Y.shape[1]
+    n_samples = H.shape[0]  # Número de muestras
+    hidden_units = H.shape[1]  # Número de nodos de la capa oculta
+    num_classes = Y.shape[1]  # Número de clases
 
-    # Inicialización de pesos y bias
-    W = initialize_weights(input_size, output_size)
-    B = np.zeros((1, output_size))
+    # Inicialización de pesos y acumuladores
+    weights = np.random.randn(num_classes, hidden_units) * 0.01  # (num_classes, hidden_units)
+    velocity = np.zeros_like(weights)  # Para momento (beta1)
+    scale = np.zeros_like(weights)  # Para ajuste adaptativo (beta2)
 
-    # Parámetros de mAdam
-    m_W = np.zeros_like(W)
-    v_W = np.zeros_like(W)
-    m_B = np.zeros_like(B)
-    v_B = np.zeros_like(B)
+    # Mezclar los datos
+    indices = np.random.permutation(n_samples)
+    shuffled_H = H[indices, :]
+    shuffled_Y = Y[indices, :]
 
-    costs = []
+    # Calcular el número de batches
+    num_batches = n_samples // batch_size
+    loss_history = []
+    update_step = 0
 
-    for t in range(1, max_iter + 1):
-        # Mezclar datos
-        indices = np.random.permutation(H.shape[0])
-        H = H[indices]
-        Y = Y[indices]
+    for epoch in range(max_iter):
+        epoch_loss = 0
 
-        # Dividir en minibatches
-        for batch_start in range(0, H.shape[0], batch_size):
-            H_batch = H[batch_start:batch_start + batch_size]
-            Y_batch = Y[batch_start:batch_start + batch_size]
+        for batch in range(num_batches):
+            update_step += 1
+            start_idx = batch * batch_size
+            end_idx = start_idx + batch_size
 
-            # Forward pass (Softmax)
-            Z = np.dot(H_batch, W.T) + B
-            exp_Z = np.exp(Z - np.max(Z, axis=1, keepdims=True))  # Estabilidad numérica
-            A = exp_Z / np.sum(exp_Z, axis=1, keepdims=True)
+            H_batch = shuffled_H[start_idx:end_idx, :]
+            Y_batch = shuffled_Y[start_idx:end_idx, :]
 
-            # Pérdida (Entropía Cruzada)
-            loss = -np.mean(np.sum(Y_batch * np.log(A + 1e-9), axis=1))
-            costs.append(loss)
+            # Forward pass
+            logits = np.dot(weights, H_batch.T)  # (num_classes, batch_size)
+            activations = ut.softmax(logits)
+
+            # Calcular la pérdida (entropía cruzada)
+            batch_loss = -np.mean(np.sum(Y_batch.T * np.log(activations + 1e-12), axis=0))
+            epoch_loss += batch_loss
 
             # Gradiente
-            grad_Z = A - Y_batch
-            grad_W = np.dot(grad_Z.T, H_batch) / batch_size
-            grad_B = np.mean(grad_Z, axis=0, keepdims=True)
+            delta = activations - Y_batch.T
+            grad_weights = np.dot(delta, H_batch) / batch_size  # (num_classes, hidden_units)
 
-            # Actualización con mAdam
-            m_W = beta1 * m_W + (1 - beta1) * grad_W
-            v_W = beta2 * v_W + (1 - beta2) * (grad_W ** 2)
-            m_B = beta1 * m_B + (1 - beta1) * grad_B
-            v_B = beta2 * v_B + (1 - beta2) * (grad_B ** 2)
+            # mAdam actualización
+            velocity = beta1 * velocity + (1 - beta1) * grad_weights
+            scale = beta2 * scale + (1 - beta2) * (grad_weights**2)
 
-            m_W_hat = m_W / (1 - beta1 ** t)
-            v_W_hat = v_W / (1 - beta2 ** t)
-            m_B_hat = m_B / (1 - beta1 ** t)
-            v_B_hat = v_B / (1 - beta2 ** t)
+            velocity_corr = velocity / (1 - beta1**update_step)
+            scale_corr = scale / (1 - beta2**update_step)
 
-            W -= lr * m_W_hat / (np.sqrt(v_W_hat) + epsilon)
-            B -= lr * m_B_hat / (np.sqrt(v_B_hat) + epsilon)
+            weights -= learning_rate * (velocity_corr / (np.sqrt(scale_corr) + epsilon))
 
-        # Imprimir pérdida periódicamente
-        #if t % 10 == 0 or t == 1:
-        #    print(f"Iteracion {t}/{max_iter}, Perdida: {loss:.6f}")
+        # Almacenar pérdida promedio por época
+        epoch_loss /= num_batches
+        loss_history.append(epoch_loss)
 
-    print(f"Entrenamiento completado. ultima perdida: {loss:.6f}")
-    return W, B, costs
+        # Mostrar información de progreso
+        if epoch % 100 == 0 or epoch == max_iter - 1:
+            print(f"Iteración {epoch + 1}/{max_iter}, Pérdida: {epoch_loss:.6f}")
+
+    print("Entrenamiento Softmax completado.")
+    return weights, loss_history
+
+
 
 # --- Main Script ---
 if __name__ == "__main__":
+    # Preparar datos
+    # ut.prepare_data()  # Crea DataTrain.csv y DataTest.csv si no existen
     # Cargar datos
     data = pd.read_csv("DataTrain.csv", header=None)
     X = data.iloc[:, :-2].values
     Y = data.iloc[:, -2:].values
 
-    # Normalizar entradas
-    X = normalize(X)
-    #print("Primeras filas de los datos normalizados:")
-    #print(X[:5])
-    
-    
+    # Normalizar X si es necesario
+    # X = ut.normalize(X)
+
     # Cargar configuraciones
     config_sae = pd.read_csv("config_sae.csv", header=None).squeeze()
     config_softmax = pd.read_csv("config_softmax.csv", header=None).squeeze()
 
     # Entrenar SAE
-    sae_weights, H1 = train_sae_decoder_elm(X, config_sae)
+    sae_weights, H1, H2 = train_sae_decoder_elm(X, config_sae)
+
+    # Guardar los pesos del SAE
+    pd.DataFrame(sae_weights["W1"]).to_csv("w1.csv", index=False, header=False)
+    pd.DataFrame(sae_weights["W2"]).to_csv("w2.csv", index=False, header=False)
+    # Nota: Si necesitas guardar sesgos, incluye líneas para B1 y B2 si no son ceros
+    # pd.DataFrame(sae_weights["B1"]).to_csv("b1.csv", index=False, header=False)
+    # pd.DataFrame(sae_weights["B2"]).to_csv("b2.csv", index=False, header=False)
 
     # Usar H1 como entrada para el clasificador
     max_iter = int(config_softmax[0])
@@ -168,31 +185,14 @@ if __name__ == "__main__":
     lr = float(config_softmax[2])
 
     # Entrenar Softmax
-    softmax_weights, softmax_biases, costs = train_softmax(H1, Y, max_iter, batch_size, lr)
+    softmax_weights, costs = train_softmax(H2, Y, max_iter, batch_size, lr)
 
-    # Guardar resultados
+    # Guardar los pesos del clasificador Softmax
+    pd.DataFrame(softmax_weights).to_csv("w3.csv", index=False, header=False)
+
+    # Guardar costos de entrenamiento
     pd.DataFrame(costs).to_csv("costo.csv", index=False, header=False)
-    np.savez("pesos_sae_softmax.npz", sae_weights=sae_weights, softmax_weights=softmax_weights, softmax_biases=softmax_biases)
 
-    print("Entrenamiento completado.")
+    print("Entrenamiento completado. Pesos y costos guardados.")
 
-    # --- Análisis del Softmax (Añade Aquí) ---
-    # Mostrar costos finales
-    #print("Costos de las últimas iteraciones:")
-    #print(costs[-10:])  # Últimas 10 pérdidas
-
-    # Estadísticas de los pesos del Softmax
-    #weights_summary = pd.DataFrame(softmax_weights).describe()
-    #print("Estadísticas de los Pesos Finales del Softmax:")
-    #print(weights_summary)
-
-    # Gráfica de evolución de los costos
-    #import matplotlib.pyplot as plt
-
-    #plt.plot(costs)
-    #plt.xlabel("Iteraciones")
-    #plt.ylabel("Pérdida (Loss)")
-    #plt.title("Evolución de la Pérdida durante el Entrenamiento Softmax")
-    #plt.grid()
-    #plt.show()
 
